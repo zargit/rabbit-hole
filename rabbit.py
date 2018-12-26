@@ -26,21 +26,23 @@ class Rabbit(mtp.Process):
     def run(self):
         while True:
             try:
-                article, level = self.task_queue.get()
+                article, level = self.task_queue.get(timeout=5)
 
                 if level < self.depth:
                     next_articles = self.get_articles(article)
                     for item in next_articles:
                             self.task_queue.put((item, level+1))
                             self.result_dict[item] = article # setting the parent
-
+                    # if level+1 == self.depth:
+                    #     self.task_queue.put((None, self.depth+1))
+                self.task_queue.task_done()
             except Exception as e:
                 print(e)
+                break
             finally:
-                self.task_queue.task_done()
-                if level >= self.depth:
-                    self.clear_queue()
-                    break
+                pass
+                # if level > self.depth:
+                #     break
 
     def get_articles(self, parent):
         selectors = ['table.vcard ~ p:nth-of-type(1)', 'table.infobox ~ p:nth-of-type(1)', '#mw-content-text div > p:nth-of-type(2)']
