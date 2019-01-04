@@ -1,6 +1,7 @@
 import multiprocessing as mtp
 from bs4 import BeautifulSoup as bs
-from stem import process
+from stem.process import launch_tor_with_config
+from torrequest import TorRequest
 import requests
 import shutil
 import os
@@ -18,12 +19,14 @@ class Rabbit(mtp.Process):
         self.depth = depth
         self.ports = ports
         # if self.ports:
-        #     self.datadir = os.path.expanduser("~") + os.sep + uuid.uuid4().hex
-        #     self.tor = process.launch_tor_with_config({'ControlPort': '{}'.format(ports[0]), 'SocksPort': '{}'.format(ports[1]), 'DataDirectory': '{}'.format(self.datadir)})
 
         print("Rabbit created: {}".format(self.name))
 
     def run(self):
+        if self.ports:
+            self.launch_tor()
+            self.tor = TorRequest(ctrl_port=self.ports[0], proxy_port=self.ports[1])
+            print("Tor connection at {}".format(self.datadir))
         while True:
             try:
                 article, level = self.task_queue.get(timeout=5)
@@ -41,13 +44,24 @@ class Rabbit(mtp.Process):
                 break
             finally:
                 pass
-                # if level > self.depth:
-                #     break
+        if self.ports:
+            self.tor.close()
+            print("Terminating tor at {}".format(self.datadir))
+            time.sleep(5)
+            shutil.rmtree(self.datadir)
+
+    def launch_tor(self):
+        self.datadir = os.path.expanduser("~") + os.sep + uuid.uuid4().hex
+        self.tor_process = launch_tor_with_config({'ControlPort': '{}'.format(self.ports[0]), 'SocksPort': '{}'.format(self.ports[1]), 'DataDirectory': '{}'.format(self.datadir)}, take_ownership=True)
 
     def get_articles(self, parent):
         selectors = ['table.vcard ~ p:nth-of-type(1)', 'table.infobox ~ p:nth-of-type(1)', '#mw-content-text div > p:nth-of-type(2)']
         try:
-            page = bs(requests.get(baseurl.format(parent)).text, 'html.parser')
+            if self.ports:
+                html = self.tor.get(baseurl.format(parent))
+            else:
+                html = requests.get(baseurl.format(parent))
+            page = bs(html.text, 'html.parser')
             for css in selectors:
                 if page.select(css):
                     return self.get_varified_articles(str(page.select(css)[0].encode("utf-8")).split(".")[0])

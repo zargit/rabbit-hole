@@ -22,7 +22,7 @@ class RabbitHole(object):
         Return:
           RabbitHole object.
         """
-        self.root_link = root_link
+        self.root_article = root_link.split("/")[-1] if "/" in root_link else root_link
         self.depth = depth
         self.processes = processes
         self.is_tor = is_tor
@@ -39,10 +39,8 @@ class RabbitHole(object):
         # `result_dict` accumulates results from all processes
         result_dict = manager.dict()
 
-        # Get the topic from the linl
-        article = self.root_link.split("/")[-1]
         # Put article in the queue as the starting point, with depth 0
-        task_queue.put((article,0))
+        task_queue.put((self.root_article,0))
 
         # Start number of process requested
         for n in range(self.processes):
@@ -52,15 +50,23 @@ class RabbitHole(object):
         # Wait for job queue to be depleted
         task_queue.join()
 
-        # Combine the result and build the tree
-        hat = {article: tree.Node(article)}
-        for title in result_dict.keys():
-            if title!=article:
-                hat[title] = tree.Node(title, parent=hat[result_dict[title]])
-
+        self.previous_result = self.build_tree(result_dict)
         manager.shutdown()
-        self.previous_result = hat[article]
         return self.previous_result
+
+    def build_tree(self, parents):
+        """Builds the tree structure from parent information.
+
+        Args:
+          parents: A dict where key is the child and value is the parent article.
+        Returns:
+          The root node of the tree.
+        """
+        tree_holder = {self.root_article: tree.Node(self.root_article)}
+        for title in parents.keys():
+            if title!=self.root_article:
+                tree_holder[title] = tree.Node(title, parent=tree_holder[parents[title]])
+        return tree_holder[self.root_article]
 
     def save_graph(self, path):
         """Save the last fetched result as a dot graph.
@@ -98,4 +104,5 @@ class RabbitHole(object):
             finally:
                 p += 1
             s.close()
+        self.minimum_port = p
         return tuple(ports)
